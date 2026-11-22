@@ -1,0 +1,62 @@
+# Bruma is a local LLM stack for computer with limited resources, e.g., Raspberry Pi 5
+# use streamlit as frontend, llama.cpp as inference engine, and qdrant as vector DB
+
+name: bruma
+
+services:
+
+  # 1 frontend
+  bruma-ui:
+    image: python:3.12-slim
+    container_name: bruma-ui
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8501:8501"
+    volumes:
+      - ./ui:/app
+    working_dir: /app
+    command: >
+      bash -c "pip install streamlit openai --quiet &&
+               streamlit run app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true"
+    depends_on:
+      - llama-server
+    mem_limit: 512m
+    
+   
+  # 2 llama.cpp server
+  # specify the model file in the command section with one of the below lines
+  #   -m /models/qwen2.5-1.5b-instruct-q4_k_m.gguf
+  #   -m /models/gemma-3-1b-it_Q4_K_M.gguf
+  # if no -m specified, the  model must be specified in the message request
+  # this is a new llama feature, for now I force Qwen
+  llama-server:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    container_name: bruma-ie
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./models:/models:ro
+    command: >
+      -m /models/qwen2.5-1.5b-instruct-q4_k_m.gguf
+      --host 0.0.0.0
+      --port 8080
+      -t 4
+      -c 2048
+      --no-webui
+      -lv 1
+      --repeat-penalty 1.5
+    mem_limit: 3g
+
+  # 3. Vector DB
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: bruma-qdrant
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6333:6333"
+    volumes:
+      - ./qdrant_storage:/qdrant/storage
+    environment:
+      - QDRANT__STORAGE__ON_DISK_PAYLOAD=true
+    mem_limit: 1536m
